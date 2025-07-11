@@ -1,0 +1,157 @@
+import numpy as np
+import cv2 as cv
+import time as tm
+
+cam = cv.VideoCapture(1, cv.CAP_DSHOW)
+cam.set(cv.CAP_PROP_FPS, 60)
+
+#modos para lógica: primeiro preto, depois qualquer bolinha
+md_preto = True
+md_prata = False
+
+tempo_spreta = tm.time()
+tempo_sprata = tm.time()
+tolerancia = 15
+
+pretas_colocadas = False
+pratas_colocadas = False
+
+margem = 20
+
+while True:
+    ret, frame = cam.read()
+
+    if not ret:
+        break
+
+    eixox = frame.shape[1]
+    eixoy = frame.shape[0]
+
+    centrox = eixox // 2
+    centroy = eixoy // 2
+
+    detectado = False
+
+    #se o modo preto estiver ativado, ele procura somente preto
+    if md_preto:
+        hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+        gaussian = cv.GaussianBlur(hsv, (11, 11), 0)
+
+        lower_black = np.array([0, 0, 0])
+        upper_black = np.array([180, 255, 80])
+
+        mask = cv.inRange(gaussian, lower_black, upper_black)
+        gaussianc = cv.GaussianBlur(mask, (9, 9), 2)
+        circulos = cv.HoughCircles(gaussianc, cv.HOUGH_GRADIENT, dp=1.2, minDist=5, param1=100, param2=25, minRadius=1,
+                                   maxRadius=80)
+        if circulos is not None:
+            circulos = np.uint16(np.around(circulos))
+            for x, y, r in circulos[0, :]:
+                if r > 2:
+                    if 0 <= y < gaussianc.shape[0] and 0 <= x < gaussianc.shape[1]:
+                        if gaussianc[y, x] > 0:
+                            detectado = True
+                            cv.circle(frame, (x, y), r, (0, 255, 0), 2)
+                            cv.circle(frame, (x, y), 2, (0, 0, 255), 3)
+                            if x < centrox - margem:
+                                print("E")
+                            elif x > centrox + margem:
+                                print("D")
+                            else:
+                                print("F")
+
+    #se não, qualquer bolinha
+    elif md_prata:
+        gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+
+        gaussianc = cv.GaussianBlur(gray, (9, 9), 2)
+        circulos = cv.HoughCircles(gaussianc, cv.HOUGH_GRADIENT, dp=1.2, minDist=5, param1=100, param2=15, minRadius=1,
+                                  maxRadius=80)
+        if circulos is not None:
+            circulos = np.uint16(np.around(circulos))
+            for x, y, r in circulos[0, :]:
+                if r > 2:
+                    if 0 <= y < gaussianc.shape[0] and 0 <= x < gaussianc.shape[1]:
+                        if gaussianc[y, x] > 0:
+                            detectado = True
+                            cv.circle(frame, (x, y), r, (0, 255, 0), 2)
+                            cv.circle(frame, (x, y), 2, (0, 0, 255), 3)
+                            if x < centrox - margem:
+                                print("E")
+                            elif x > centrox + margem:
+                                print("D")
+                            else:
+                                print("F")
+    #logica de pegar primeiro bolinhas pretas
+    if md_preto:
+        if detectado:
+            tempo_spreta = tm.time()
+        elif tm.time() - tempo_spreta > tolerancia:
+            if not pretas_colocadas:
+                # BUSCAR ÁREA VERMELHA
+                hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+                lower_red1 = np.array([0, 135, 120])
+                upper_red1 = np.array([10, 255, 255])
+                lower_red2 = np.array([160, 135, 120])
+                upper_red2 = np.array([179, 255, 255])
+
+                mask_red1 = cv.inRange(hsv, lower_red1, upper_red1)
+                mask_red2 = cv.inRange(hsv, lower_red2, upper_red2)
+                maskr_crua = cv.bitwise_or(mask_red1, mask_red2)
+                maskr = cv.GaussianBlur(maskr_crua, (11, 11), 0)
+
+                contornos_r, _ = cv.findContours(maskr, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+                for cnt in contornos_r:
+                    area = cv.contourArea(cnt)
+                    if area > 200:
+                        x, y, w, h = cv.boundingRect(cnt)
+                        cv.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                        if x < centrox - margem:
+                            print("vermelho esquerda")
+                        elif x > centrox + margem:
+                            print("vermelho direita")
+                        else:
+                            print("Ir para frente, vermelho")
+                            # Simula o armazenamento
+                            print("Armazenando bolinhas pretas...")
+                            pretas_colocadas = True
+                            md_preto = False
+                            md_prata = True
+                            tempo_sprata = tm.time()
+
+    elif md_prata:
+        if detectado:
+            tempo_sprata = tm.time()
+        elif tm.time() - tempo_sprata > tolerancia:
+            if not pratas_colocadas:
+                # BUSCAR ÁREA VERDE
+                hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+                gaussian = cv.GaussianBlur(hsv, (11, 11), 0)
+
+                lower_green = np.array([46, 130, 73])
+                upper_green = np.array([85, 255, 255])
+                maskg = cv.inRange(gaussian, lower_green, upper_green)
+
+                contours_g, _ = cv.findContours(maskg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+                for cnt in contours_g:
+                    area = cv.contourArea(cnt)
+                    if area > 500:
+                        x, y, w, h = cv.boundingRect(cnt)
+                        cv.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        if x < centrox - margem:
+                            print("verde esquerda")
+                        elif x > centrox + margem:
+                            print("verde direita")
+                        else:
+                            print("Ir para frente, verde")
+                            # Simula o armazenamento
+                            print("Armazenando bolinhas prateadas...")
+                            pratas_colocadas = True
+
+    cv.imshow("frame", frame)
+    if cv.waitKey(1) == ord("q"):
+        break
+
+cam.release()
+cv.destroyAllWindows()
+
