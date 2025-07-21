@@ -1,0 +1,179 @@
+import numpy as np
+import cv2 as cv
+import time as tm
+
+def detectar_bolinhas_pretas(frame, centrox, margem):
+    hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+    gaussian = cv.GaussianBlur(hsv, (11, 11), 0)
+
+    lower_black = np.array([0, 0, 0])
+    upper_black = np.array([180, 255, 80])
+
+    mask = cv.inRange(gaussian, lower_black, upper_black)
+    gaussianc = cv.GaussianBlur(mask, (9, 9), 2)
+    circulos = cv.HoughCircles(gaussianc, cv.HOUGH_GRADIENT, dp=1.2, minDist=5, param1=100, param2=25, minRadius=1, maxRadius=80)
+
+    detectado = False
+    if circulos is not None:
+        circulos = np.uint16(np.around(circulos[0]))
+        melhor = min(circulos, key=lambda c: abs(int(c[0]) - centrox))
+        x, y, r = melhor
+        if r > 2 and 0 <= y < gaussianc.shape[0] and 0 <= x < gaussianc.shape[1] and gaussianc[y, x] > 0:
+            detectado = True
+            # Desenha só a bolinha escolhida
+            cv.circle(frame, (x, y), r, (0, 255, 0), 2)
+            cv.circle(frame, (x, y), 2, (0, 0, 255), 3)
+            if x < centrox - margem:
+                return "E"
+            elif x > centrox + margem:
+                return "D"
+            else:
+                return "F"
+
+    return None
+
+def detectar_area_vermelha(frame, centrox, margem):
+    hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+    lower_red1 = np.array([0, 135, 120])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([160, 135, 120])
+    upper_red2 = np.array([179, 255, 255])
+
+    mask_red1 = cv.inRange(hsv, lower_red1, upper_red1)
+    mask_red2 = cv.inRange(hsv, lower_red2, upper_red2)
+    maskr_crua = cv.bitwise_or(mask_red1, mask_red2)
+    maskr = cv.GaussianBlur(maskr_crua, (11, 11), 0)
+
+    contornos_r, _ = cv.findContours(maskr, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    for cnt in contornos_r:
+        area = cv.contourArea(cnt)
+        if area > 200:
+            x, y, w, h = cv.boundingRect(cnt)
+            cv.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            centro_area = x + w // 2
+            if centro_area < centrox - margem:
+                return "E"
+            elif centro_area > centrox + margem:
+                return "D"
+            else:
+                return "F"
+    return None
+
+def detectar_bolinhas_prata(frame, centrox, margem):
+    gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+    blur = cv.GaussianBlur(gray, (9, 9), 2)
+
+    circulos = cv.HoughCircles(blur, cv.HOUGH_GRADIENT, dp=1.2, minDist=5,
+                               param1=100, param2=15, minRadius=1, maxRadius=80)
+
+    if circulos is not None:
+        circulos = np.uint16(np.around(circulos[0]))
+        melhor = min(circulos, key=lambda c: abs(int(c[0]) - centrox))
+        x, y, r = melhor
+        if r > 2 and 0 <= y < blur.shape[0] and 0 <= x < blur.shape[1]:
+            cv.circle(frame, (x, y), r, (0, 255, 0), 2)
+            cv.circle(frame, (x, y), 2, (0, 0, 255), 3)
+            if x < centrox - margem:
+                return "E"
+            elif x > centrox + margem:
+                return "D"
+            else:
+                return "F"
+    return None
+
+def detectar_area_verde(frame,centrox,margem):
+    hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+    gaussian = cv.GaussianBlur(hsv, (11, 11), 0)
+
+    lower_green = np.array([46, 130, 73])
+    upper_green = np.array([85, 255, 255])
+    maskg = cv.inRange(gaussian, lower_green, upper_green)
+
+    contours_g, _ = cv.findContours(maskg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    for cnt in contours_g:
+        area = cv.contourArea(cnt)
+        if area > 500:
+            x, y, w, h = cv.boundingRect(cnt)
+            cv.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            centroa = x + w // 2
+            if centroa < centrox - margem:
+                return "E"
+            elif centroa > centrox + margem:
+                return "D"
+            else:
+                return "F"
+    return None
+cam = cv.VideoCapture(1, cv.CAP_DSHOW)
+cam.set(cv.CAP_PROP_FPS, 60)
+
+tempo_spreta = tm.time()
+tempo_sprata = tm.time()
+tolerancia = 10
+
+pretas_colocadas = False
+pratas_colocadas = False
+
+estado = "Buscando pretas"
+while True:
+    ret, frame = cam.read()
+
+    if not ret:
+        break
+
+    cntx = frame.shape[1] // 2
+
+    if estado == "Buscando pretas":
+        detectado = detectar_bolinhas_pretas(frame,cntx,15)
+        if detectado is not None:
+            tempo_spreta = tm.time()
+
+        elif tm.time() - tempo_spreta > tolerancia:
+            estado = "Buscar area vermelha"
+
+
+    elif estado == "Buscar area vermelha":
+        achado = detectar_area_vermelha(frame,cntx,15)
+
+        if achado is not None:
+            print("SIMULAÇÃO:")
+            print("Manda comando pro esp virar 180°")
+            print("Depositar bolinhas pretas")
+
+            estado = "Buscando pratas"
+
+
+    elif estado == "Buscando pratas":
+        detectado = detectar_bolinhas_prata(frame,cntx,15)
+        if detectado is not None:
+            tempo_sprata = tm.time()
+
+        elif tm.time() - tempo_sprata > tolerancia:
+            estado = "Buscar area verde"
+
+    elif estado == "Buscar area verde":
+        achado = detectar_area_verde(frame,cntx,15)
+
+        if achado is not None:
+            print("SIMULAÇÃO:")
+            print("Manda comando pro esp virar 180°")
+            print("Depositar bolinhas pratas")
+
+            estado = "Terminou"
+
+
+    elif estado == "Terminou":
+        print("Aqui ficará o sistema de sair da arena")
+
+        if "leitura sensor de cor == prata":
+            break
+
+
+    cv.imshow("Frame",frame)
+
+    if cv.waitKey(1) == ord("q"):
+        break
+
+
+cam.release()
+cv.destroyAllWindows()
+
